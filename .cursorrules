@@ -1,0 +1,84 @@
+# Cursor AI Rules for Bot System
+
+## Project Context
+This is a distributed bot execution platform built with TypeScript, Redis, BullMQ, and Docker. The system manages multi-language bot execution (Python, Node.js, Java) with semaphore-based concurrency control, webhook delivery, and comprehensive monitoring.
+
+## Code Style and Standards
+
+### TypeScript
+- Use strict TypeScript configuration
+- Prefer interfaces over types for object shapes
+- Use async/await over Promises
+- Include proper error handling with try-catch blocks
+- Use descriptive variable and function names
+- Add JSDoc comments for complex functions
+
+### Architecture Patterns
+- Follow microservices architecture
+- Use dependency injection where appropriate
+- Implement graceful shutdown patterns
+- Use proper logging with timestamps and emojis for clarity
+- Follow the existing pattern of health checks and metrics
+
+### File Organization
+- Keep package-specific code in respective packages
+- Use common package for shared types and utilities
+- Maintain clean separation between services
+- Follow existing Docker multi-stage build patterns
+
+## Specific Guidelines
+
+### Queue Management
+- Always use BullMQ for job processing
+- Implement proper job retry logic with exponential backoff
+- Add appropriate job removal policies (removeOnComplete, removeOnFail)
+- Include progress updates for long-running jobs
+
+### Redis Usage
+- Use connection pooling and retry logic
+- Implement proper cleanup in shutdown handlers
+- Use Redis for semaphores and distributed locking
+
+### Error Handling
+- Distinguish between temporary and permanent errors
+- Implement circuit breakers for external services
+- Log errors with sufficient context for debugging
+- Use appropriate HTTP status codes
+
+### Monitoring
+- Add Prometheus metrics for all key operations
+- Include timing and counting metrics
+- Use proper metric labels for filtering
+- Ensure metrics are exposed on /metrics endpoints
+
+### Docker
+- Use multi-stage builds for optimization
+- Include health checks in containers
+- Use appropriate base images (node:18-alpine)
+- Properly handle signals for graceful shutdown
+
+## Dependencies Management
+- Pin major versions in package.json
+- Use npm ci for reproducible builds
+- Keep dependencies minimal and necessary
+- Regularly update for security patches
+
+## Testing
+- Write unit tests for business logic
+- Include integration tests for API endpoints
+- Test error conditions and edge cases
+- Use proper mocking for external dependencies
+
+## Documentation
+- Keep README.md updated with new features
+- Document environment variables
+- Include example usage and API documentation
+- Maintain changelog for significant changes
+
+## When suggesting changes:
+1. Consider the existing architecture and patterns
+2. Ensure changes maintain system resilience
+3. Add appropriate logging and monitoring
+4. Include proper error handling
+5. Maintain backward compatibility where possible
+6. Suggest performance optimizations when relevant 
