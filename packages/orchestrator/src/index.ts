@@ -1,13 +1,17 @@
 import { Worker, Queue } from 'bullmq';
 import Redis from 'ioredis';
 import axios from 'axios';
+import express from 'express';
 import {
     Semaphore,
     BotTask,
     botExecutionCounter,
     botExecutionDuration,
     semaphoreUsageGauge,
-    semaphoreWaitingGauge
+    semaphoreWaitingGauge,
+    getMetrics,
+    serviceHealthGauge,
+    queueSizeGauge
 } from '@bot-core/common';
 
 const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
@@ -17,7 +21,7 @@ const WEBHOOK_MANAGER_URL = process.env.WEBHOOK_MANAGER_URL || 'http://webhook-m
 const redis = new Redis({
     host: REDIS_HOST,
     port: 6379,
-    maxRetriesPerRequest: 3
+    maxRetriesPerRequest: null
 });
 
 // Configurar colas
@@ -283,10 +287,86 @@ async function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
+// Configurar servidor HTTP para métricas
+const app = express();
+const PORT = process.env.ORCHESTRATOR_PORT || 3002;
+
+// Health check endpoint
+app.get('/health', (req: express.Request, res: express.Response) => {
+    res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        service: 'orchestrator',
+        semaphores: Object.fromEntries(semaphoreConfigs),
+        queues: ['bot-tasks', 'bot-python-tasks', 'bot-node-tasks', 'bot-java-tasks']
+    });
+});
+
+// Métricas de Prometheus
+app.get('/metrics', async (req: express.Request, res: express.Response) => {
+    try {
+        // Actualizar métricas de colas antes de servir
+        await updateQueueMetrics();
+        await updateSemaphoreMetrics();
+
+        const metrics = await getMetrics();
+        res.set('Content-Type', 'text/plain');
+        res.send(metrics);
+    } catch (error) {
+        console.error('Error getting metrics:', error);
+        res.status(500).json({ error: 'Failed to get metrics' });
+    }
+});
+
+// Función para actualizar métricas de colas
+async function updateQueueMetrics() {
+    try {
+        // Métricas de cola principal
+        const [waiting, active, completed, failed] = await Promise.all([
+            botQueue.getWaiting(),
+            botQueue.getActive(),
+            botQueue.getCompleted(),
+            botQueue.getFailed()
+        ]);
+
+        queueSizeGauge.set({ queue_name: 'bot-tasks', state: 'waiting' }, waiting.length);
+        queueSizeGauge.set({ queue_name: 'bot-tasks', state: 'active' }, active.length);
+        queueSizeGauge.set({ queue_name: 'bot-tasks', state: 'completed' }, completed.length);
+        queueSizeGauge.set({ queue_name: 'bot-tasks', state: 'failed' }, failed.length);
+
+        // Métricas de colas de workers
+        for (const [botType, queue] of workerQueues) {
+            const [w, a, c, f] = await Promise.all([
+                queue.getWaiting(),
+                queue.getActive(),
+                queue.getCompleted(),
+                queue.getFailed()
+            ]);
+
+            queueSizeGauge.set({ queue_name: `bot-${botType}-tasks`, state: 'waiting' }, w.length);
+            queueSizeGauge.set({ queue_name: `bot-${botType}-tasks`, state: 'active' }, a.length);
+            queueSizeGauge.set({ queue_name: `bot-${botType}-tasks`, state: 'completed' }, c.length);
+            queueSizeGauge.set({ queue_name: `bot-${botType}-tasks`, state: 'failed' }, f.length);
+        }
+    } catch (error) {
+        console.error('Error updating queue metrics:', error);
+    }
+}
+
+// Iniciar servidor HTTP
+app.listen(PORT, () => {
+    console.log(`📊 Orchestrator metrics server running on port ${PORT}`);
+    serviceHealthGauge.set({ service: 'orchestrator', version: '1.0.0' }, 1);
+});
+
+// Update metrics every 30 seconds
+setInterval(updateQueueMetrics, 30 * 1000);
+
 console.log('🚀 Orchestrator started successfully');
 console.log(`📍 Redis: ${REDIS_HOST}:6379`);
 console.log(`🔗 Webhook Manager: ${WEBHOOK_MANAGER_URL}`);
 console.log('🎯 Ready to process bot tasks...');
 
 // Ejecutar estadísticas iniciales
-logStats(); 
+logStats();
+updateQueueMetrics(); 

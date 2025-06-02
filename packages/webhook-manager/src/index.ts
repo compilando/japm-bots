@@ -20,7 +20,7 @@ const RETRY_DELAY = parseInt(process.env.WEBHOOK_RETRY_DELAY || '1000');
 const redis = new Redis({
     host: REDIS_HOST,
     port: 6379,
-    maxRetriesPerRequest: 3
+    maxRetriesPerRequest: null
 });
 
 // Configurar cola de webhooks
@@ -32,12 +32,25 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (req: express.Request, res: express.Response) => {
     res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
         queue: webhookQueue.name
     });
+});
+
+// Métricas de Prometheus
+app.get('/metrics', async (req: express.Request, res: express.Response) => {
+    try {
+        const { getMetrics } = await import('@bot-core/common');
+        const metrics = await getMetrics();
+        res.set('Content-Type', 'text/plain');
+        res.send(metrics);
+    } catch (error) {
+        console.error('Error getting metrics:', error);
+        res.status(500).json({ error: 'Failed to get metrics' });
+    }
 });
 
 // Endpoint para recibir resultados de bots y encolar webhooks

@@ -15,16 +15,33 @@ scrape_configs:
     static_configs:
       - targets: ["api-gateway:3000"]
     metrics_path: "/metrics"
-    scrape_interval: 30s
+    scrape_interval: 15s
+    scrape_timeout: 10s
 
   - job_name: "webhook-manager"
     static_configs:
       - targets: ["webhook-manager:4000"]
     metrics_path: "/metrics"
-    scrape_interval: 30s
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  - job_name: "orchestrator"
+    static_configs:
+      - targets: ["orchestrator:3002"]
+    metrics_path: "/metrics"
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  - job_name: "workers"
+    static_configs:
+      - targets: ["workers-1:3003", "workers-2:3003", "workers-3:3003"]
+    metrics_path: "/metrics"
+    scrape_interval: 15s
+    scrape_timeout: 10s
 
   - job_name: "mock-webhook"
     static_configs:
       - targets: ["mock-webhook:5000"]
-    metrics_path: "/stats"
-    scrape_interval: 30s
+    metrics_path: "/metrics"
+    scrape_interval: 15s
+    scrape_timeout: 10s

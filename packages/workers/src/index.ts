@@ -1,9 +1,12 @@
 import { Worker } from 'bullmq';
 import Redis from 'ioredis';
 import axios from 'axios';
+import express from 'express';
 import {
     botExecutionCounter,
-    botExecutionDuration
+    botExecutionDuration,
+    getMetrics,
+    serviceHealthGauge
 } from '@bot-core/common';
 
 const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
@@ -14,7 +17,7 @@ const BOT_TYPES = ['python', 'node', 'java'];
 const redis = new Redis({
     host: REDIS_HOST,
     port: 6379,
-    maxRetriesPerRequest: 3
+    maxRetriesPerRequest: null
 });
 
 // Simuladores de ejecución por tipo de bot
@@ -255,6 +258,39 @@ async function shutdown() {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+
+// Configurar servidor HTTP para métricas
+const app = express();
+const PORT = process.env.WORKERS_PORT || 3003;
+
+// Health check endpoint
+app.get('/health', (req: express.Request, res: express.Response) => {
+    res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        service: 'workers',
+        botTypes: BOT_TYPES,
+        hostname: process.env.HOSTNAME || 'unknown'
+    });
+});
+
+// Métricas de Prometheus
+app.get('/metrics', async (req: express.Request, res: express.Response) => {
+    try {
+        const metrics = await getMetrics();
+        res.set('Content-Type', 'text/plain');
+        res.send(metrics);
+    } catch (error) {
+        console.error('Error getting metrics:', error);
+        res.status(500).json({ error: 'Failed to get metrics' });
+    }
+});
+
+// Iniciar servidor HTTP
+app.listen(PORT, () => {
+    console.log(`📊 Workers metrics server running on port ${PORT}`);
+    serviceHealthGauge.set({ service: 'workers', version: '1.0.0' }, 1);
+});
 
 console.log('🚀 Multi-language bot workers started successfully');
 console.log(`📍 Redis: ${REDIS_HOST}:6379`);

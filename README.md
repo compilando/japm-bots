@@ -14,8 +14,8 @@ Complete multi-language bot execution system with TypeScript, Redis, BullMQ and 
          └───────────────────────┼───────────────────────┘
                                  │
          ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-         │ Webhook Manager │    │     Redis      │    │ Mock Webhook    │
-         │   (Retries)     │    │   (Queues)     │    │   (Testing)     │
+         │ Webhook Manager │    │     Redis       │    │ Mock Webhook    │
+         │   (Retries)     │    │   (Queues)      │    │   (Testing)     │
          └─────────────────┘    └─────────────────┘    └─────────────────┘
                                          │
          ┌─────────────────┐    ┌─────────────────┐
@@ -71,7 +71,7 @@ Complete multi-language bot execution system with TypeScript, Redis, BullMQ and 
 - Docker and Docker Compose
 - Git
 
-### Running
+### Quick Start
 
 1. **Clone repository**
 ```bash
@@ -81,13 +81,20 @@ cd japm-bots
 
 2. **Start the system**
 ```bash
-docker-compose up --build -d
+./scripts/start.sh
 ```
 
-3. **Verify services**
+3. **Test all services**
 ```bash
-docker-compose ps
+./scripts/test.sh
 ```
+
+### Available Scripts
+
+- `./scripts/start.sh` - Start complete system with logging
+- `./scripts/start.sh --clean` - Clean rebuild
+- `./scripts/start.sh --force` - Force clean rebuild  
+- `./scripts/test.sh` - Test all endpoints and functionality
 
 ### Main Endpoints
 
@@ -97,6 +104,7 @@ docker-compose ps
 - **Mock Webhook**: http://localhost:5000
 - **Prometheus**: http://localhost:9090
 - **Grafana**: http://localhost:3001 (admin/admin123)
+- **Loki**: http://localhost:3100
 
 ## 📝 Usage Examples
 
@@ -159,19 +167,40 @@ curl http://localhost:5000/stats
 - `semaphore_usage`: Current semaphore usage
 - `semaphore_waiting`: Tasks waiting for semaphores
 
-### Grafana Dashboard
+### Grafana Dashboards
 
 Access http://localhost:3001 with:
 - Username: `admin`
 - Password: `admin123`
 
-The dashboard includes:
+**Bot System Metrics Dashboard**:
 - Total bot executions
 - Execution rate by type
 - Execution duration (percentiles)
 - Webhook delivery status
 - Real-time queue size
 - Semaphore usage
+
+**Bot System Logs Dashboard**:
+- Real-time logs from all services
+- Service-specific log panels
+- Error filtering and search
+- Log rate metrics
+
+### Useful Log Queries
+```bash
+# All logs
+{container_name=~".+"}
+
+# Errors only
+{container_name=~".+"} |~ "(?i)(error|exception|fail)"
+
+# Bot executions
+{container_name=~".+"} |~ "🤖.*bot"
+
+# Webhook deliveries
+{container_name=~".+"} |~ "📤.*webhook"
+```
 
 ## 🔧 Configuration
 

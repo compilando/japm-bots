@@ -1,52 +1,114 @@
 #!/bin/bash
 
-echo "🤖 Starting Bot System..."
+# Función para mostrar ayuda
+show_help() {
+    echo "🚀 Bot System Starter"
+    echo ""
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "OPTIONS:"
+    echo "  --clean    Clean rebuild (remove all images and containers)"
+    echo "  --force    Force rebuild with npm cache cleaning"
+    echo "  --help     Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0              # Normal start"
+    echo "  $0 --clean     # Clean start"
+    echo "  $0 --force     # Force clean start"
+}
 
-# Verificar que Docker esté corriendo
-if ! docker info > /dev/null 2>&1; then
-    echo "❌ Docker is not running. Please start Docker first."
-    exit 1
+# Función para limpiar todo
+clean_all() {
+    echo "🧹 Cleaning everything..."
+    
+    # Stop all containers
+    docker compose down
+    
+    # Remove project images
+    echo "🗑️  Removing project images..."
+    docker rmi $(docker images | grep japm-bots | awk '{print $3}') 2>/dev/null || true
+    
+    # Clean build cache
+    docker builder prune -f
+    
+    if [ "$1" = "force" ]; then
+        echo "🧼 Force cleaning npm caches..."
+        for package in packages/*/; do
+            if [ -d "$package" ]; then
+                echo "Cleaning $package..."
+                (cd "$package" && rm -rf node_modules dist 2>/dev/null || true)
+            fi
+        done
+        
+        # Remove dangling images
+        docker image prune -f
+    fi
+}
+
+# Parse arguments
+CLEAN=false
+FORCE=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --clean)
+            CLEAN=true
+            shift
+            ;;
+        --force)
+            CLEAN=true
+            FORCE=true
+            shift
+            ;;
+        --help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+echo "🚀 Starting Bot System with Logging Stack..."
+echo ""
+
+# Clean if requested
+if [ "$CLEAN" = true ]; then
+    if [ "$FORCE" = true ]; then
+        clean_all "force"
+    else
+        clean_all
+    fi
 fi
 
-# Verificar que Docker Compose esté disponible
-if ! command -v docker-compose &> /dev/null; then
-    echo "❌ Docker Compose is not installed."
-    exit 1
-fi
+# Start services
+echo "🔨 Building and starting services..."
+docker compose up --build -d
 
-# Crear archivo .env si no existe
-if [ ! -f .env ]; then
-    echo "📝 Creating .env file from env.example..."
-    cp env.example .env
-fi
-
-# Construir e iniciar servicios
-echo "🏗️  Building and starting services..."
-docker-compose up --build -d
-
-# Esperar a que los servicios estén listos
-echo "⏳ Waiting for services to be ready..."
+# Wait for services
+echo "⏳ Waiting for services to initialize..."
 sleep 30
 
-# Verificar estado de los servicios
-echo "🔍 Checking service status..."
-docker-compose ps
+# Show status
+echo ""
+echo "📊 Service Status:"
+docker compose ps
 
 echo ""
-echo "✅ Bot System is ready!"
+echo "✅ Bot System started successfully!"
 echo ""
-echo "🌐 Available endpoints:"
-echo "   • API Gateway:    http://localhost:3000"
-echo "   • Bull Board:     http://localhost:3000/admin/queues"
-echo "   • Webhook Manager: http://localhost:4000"
-echo "   • Mock Webhook:   http://localhost:5000"
-echo "   • Prometheus:     http://localhost:9090"
-echo "   • Grafana:        http://localhost:3001 (admin/admin123)"
+echo "🌐 Access URLs:"
+echo "  📊 Prometheus: http://localhost:9090"
+echo "  📈 Grafana: http://localhost:3001 (admin/admin123)"
+echo "  📝 Loki: http://localhost:3100"
+echo "  🔄 Bull Board: http://localhost:3000/admin/queues"
+echo "  🚪 API Gateway: http://localhost:3000"
+echo "  🔗 Webhook Manager: http://localhost:4000"
 echo ""
-echo "📝 Example usage:"
-echo "curl -X POST http://localhost:3000/invoke \\"
-echo "  -H \"Content-Type: application/json\" \\"
-echo "  -d '{\"botType\":\"node\",\"payload\":{\"test\":\"hello\"},\"webhookUrl\":\"http://mock-webhook:5000\"}'"
-echo ""
-echo "📋 View logs: docker-compose logs -f"
-echo "🛑 Stop system: docker-compose down" 
+echo "🔍 Run './scripts/test.sh' to test all endpoints"
+echo "📋 Available Dashboards in Grafana:"
+echo "  - Bot System Metrics"
+echo "  - Bot System Logs" 

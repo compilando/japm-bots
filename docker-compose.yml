@@ -29,9 +29,12 @@ services:
     build:
       context: .
       dockerfile: packages/orchestrator/Dockerfile
+    ports:
+      - "3002:3002"
     environment:
       REDIS_HOST: redis
       NODE_ENV: production
+      ORCHESTRATOR_PORT: 3002
     depends_on:
       redis:
         condition: service_healthy
@@ -51,19 +54,53 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  workers:
+  workers-1:
     build:
       context: .
       dockerfile: packages/workers/Dockerfile
+    ports:
+      - "3003:3003"
     environment:
       REDIS_HOST: redis
       NODE_ENV: production
+      WORKERS_PORT: 3003
+      HOSTNAME: workers-1
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      replicas: 3
+
+  workers-2:
+    build:
+      context: .
+      dockerfile: packages/workers/Dockerfile
+    ports:
+      - "3004:3003"
+    environment:
+      REDIS_HOST: redis
+      NODE_ENV: production
+      WORKERS_PORT: 3003
+      HOSTNAME: workers-2
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  workers-3:
+    build:
+      context: .
+      dockerfile: packages/workers/Dockerfile
+    ports:
+      - "3005:3003"
+    environment:
+      REDIS_HOST: redis
+      NODE_ENV: production
+      WORKERS_PORT: 3003
+      HOSTNAME: workers-3
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   mock-webhook:
     build:
@@ -91,8 +128,35 @@ services:
       - '--web.enable-lifecycle'
     restart: unless-stopped
 
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki:/etc/loki
+      - loki-data:/tmp/loki
+    command: 
+      - -config.file=/etc/loki/local-config.yaml
+      - -target=all
+    user: "0"
+    environment:
+      - LOKI_LOCAL_CONFIG=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:latest
+    volumes:
+      - ./promtail:/etc/promtail
+      - /var/log:/var/log
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    restart: unless-stopped
+
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.4.1
     ports:
       - "3001:3000"
     volumes:
@@ -102,9 +166,18 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin123
       GF_USERS_ALLOW_SIGN_UP: false
+      GF_INSTALL_PLUGINS: ""
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: ""
+      GF_LOG_LEVEL: warn
+      GF_PLUGINS_ENABLE_ALPHA: false
+      GF_FEATURE_TOGGLES_ENABLE: ""
+      GF_AUTO_ASSIGN_ORG_ROLE: Viewer
+    depends_on:
+      - loki
     restart: unless-stopped
 
 volumes:
   redis-data:
   prometheus-data:
-  grafana-data: 
+  grafana-data:
+  loki-data: 

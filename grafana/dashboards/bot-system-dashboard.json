@@ -1,151 +1,302 @@
 {
-    "dashboard": {
-        "id": null,
-        "title": "Bot System Dashboard",
-        "tags": [
-            "bot-system",
-            "monitoring"
-        ],
-        "style": "dark",
-        "timezone": "browser",
-        "panels": [
-            {
-                "id": 1,
-                "title": "Bot Executions Total",
-                "type": "stat",
-                "targets": [
-                    {
-                        "expr": "sum(bot_executions_total)",
-                        "refId": "A"
-                    }
-                ],
-                "fieldConfig": {
-                    "defaults": {
-                        "color": {
-                            "mode": "thresholds"
-                        },
-                        "thresholds": {
-                            "steps": [
-                                {
-                                    "color": "green",
-                                    "value": null
-                                }
-                            ]
-                        }
-                    }
-                },
-                "gridPos": {
-                    "h": 8,
-                    "w": 6,
-                    "x": 0,
-                    "y": 0
-                }
+    "id": null,
+    "title": "Bot System Dashboard",
+    "tags": [
+        "bot",
+        "system",
+        "monitoring"
+    ],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+        "from": "now-1h",
+        "to": "now"
+    },
+    "panels": [
+        {
+            "id": 1,
+            "title": "System Health",
+            "type": "stat",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 0
             },
-            {
-                "id": 2,
-                "title": "Bot Execution Rate",
-                "type": "graph",
-                "targets": [
-                    {
-                        "expr": "rate(bot_executions_total[5m])",
-                        "refId": "A",
-                        "legendFormat": "{{bot_type}} - {{status}}"
-                    }
-                ],
-                "gridPos": {
-                    "h": 8,
-                    "w": 12,
-                    "x": 6,
-                    "y": 0
+            "targets": [
+                {
+                    "expr": "service_health",
+                    "legendFormat": "{{service}}",
+                    "refId": "A"
                 }
-            },
-            {
-                "id": 3,
-                "title": "Bot Execution Duration",
-                "type": "graph",
-                "targets": [
-                    {
-                        "expr": "histogram_quantile(0.95, rate(bot_execution_duration_seconds_bucket[5m]))",
-                        "refId": "A",
-                        "legendFormat": "95th percentile"
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "red",
+                                "value": 0
+                            },
+                            {
+                                "color": "green",
+                                "value": 1
+                            }
+                        ]
                     },
-                    {
-                        "expr": "histogram_quantile(0.50, rate(bot_execution_duration_seconds_bucket[5m]))",
-                        "refId": "B",
-                        "legendFormat": "50th percentile"
-                    }
-                ],
-                "gridPos": {
-                    "h": 8,
-                    "w": 6,
-                    "x": 18,
-                    "y": 0
-                }
-            },
-            {
-                "id": 4,
-                "title": "Webhook Deliveries",
-                "type": "graph",
-                "targets": [
-                    {
-                        "expr": "rate(webhook_deliveries_total[5m])",
-                        "refId": "A",
-                        "legendFormat": "{{status}}"
-                    }
-                ],
-                "gridPos": {
-                    "h": 8,
-                    "w": 12,
-                    "x": 0,
-                    "y": 8
-                }
-            },
-            {
-                "id": 5,
-                "title": "Queue Size",
-                "type": "graph",
-                "targets": [
-                    {
-                        "expr": "queue_size",
-                        "refId": "A",
-                        "legendFormat": "{{queue_name}}"
-                    }
-                ],
-                "gridPos": {
-                    "h": 8,
-                    "w": 12,
-                    "x": 12,
-                    "y": 8
-                }
-            },
-            {
-                "id": 6,
-                "title": "Semaphore Usage",
-                "type": "graph",
-                "targets": [
-                    {
-                        "expr": "semaphore_usage",
-                        "refId": "A",
-                        "legendFormat": "{{semaphore_name}} used"
-                    },
-                    {
-                        "expr": "semaphore_waiting",
-                        "refId": "B",
-                        "legendFormat": "{{semaphore_name}} waiting"
-                    }
-                ],
-                "gridPos": {
-                    "h": 8,
-                    "w": 24,
-                    "x": 0,
-                    "y": 16
+                    "unit": "short"
                 }
             }
-        ],
-        "time": {
-            "from": "now-1h",
-            "to": "now"
         },
-        "refresh": "5s"
-    }
+        {
+            "id": 2,
+            "title": "Bot Executions Rate",
+            "type": "graph",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 0
+            },
+            "targets": [
+                {
+                    "expr": "rate(bot_executions_total[5m])",
+                    "legendFormat": "{{bot_type}} - {{status}}",
+                    "refId": "A"
+                }
+            ],
+            "yAxes": [
+                {
+                    "label": "Executions/sec"
+                },
+                {
+                    "show": false
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "title": "Queue Sizes",
+            "type": "graph",
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 8
+            },
+            "targets": [
+                {
+                    "expr": "queue_size",
+                    "legendFormat": "{{queue_name}} - {{state}}",
+                    "refId": "A"
+                }
+            ],
+            "yAxes": [
+                {
+                    "label": "Queue Size"
+                },
+                {
+                    "show": false
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "title": "Bot Execution Duration",
+            "type": "graph",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 16
+            },
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.95, rate(bot_execution_duration_seconds_bucket[5m]))",
+                    "legendFormat": "95th percentile - {{bot_type}}",
+                    "refId": "A"
+                },
+                {
+                    "expr": "histogram_quantile(0.50, rate(bot_execution_duration_seconds_bucket[5m]))",
+                    "legendFormat": "50th percentile - {{bot_type}}",
+                    "refId": "B"
+                }
+            ],
+            "yAxes": [
+                {
+                    "label": "Duration (seconds)"
+                },
+                {
+                    "show": false
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "title": "Semaphore Usage",
+            "type": "graph",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 16
+            },
+            "targets": [
+                {
+                    "expr": "semaphore_usage",
+                    "legendFormat": "{{semaphore_name}} - Used",
+                    "refId": "A"
+                },
+                {
+                    "expr": "semaphore_waiting",
+                    "legendFormat": "{{semaphore_name}} - Waiting",
+                    "refId": "B"
+                }
+            ],
+            "yAxes": [
+                {
+                    "label": "Count"
+                },
+                {
+                    "show": false
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "title": "Webhook Delivery Rate",
+            "type": "graph",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "rate(webhook_deliveries_total[5m])",
+                    "legendFormat": "{{status}} - {{http_code}}",
+                    "refId": "A"
+                }
+            ],
+            "yAxes": [
+                {
+                    "label": "Deliveries/sec"
+                },
+                {
+                    "show": false
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "title": "System Resources",
+            "type": "graph",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 24
+            },
+            "targets": [
+                {
+                    "expr": "process_resident_memory_bytes",
+                    "legendFormat": "{{job}} - Memory",
+                    "refId": "A"
+                },
+                {
+                    "expr": "rate(process_cpu_seconds_total[5m])",
+                    "legendFormat": "{{job}} - CPU",
+                    "refId": "B"
+                }
+            ],
+            "yAxes": [
+                {
+                    "label": "Bytes / CPU %"
+                },
+                {
+                    "show": false
+                }
+            ]
+        },
+        {
+            "id": 8,
+            "title": "Bot Execution Success Rate",
+            "type": "singlestat",
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 0,
+                "y": 32
+            },
+            "targets": [
+                {
+                    "expr": "rate(bot_executions_total{status=\"completed\"}[5m]) / rate(bot_executions_total[5m]) * 100",
+                    "refId": "A"
+                }
+            ],
+            "valueName": "current",
+            "format": "percent",
+            "thresholds": "80,90"
+        },
+        {
+            "id": 9,
+            "title": "Average Bot Response Time",
+            "type": "singlestat",
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 6,
+                "y": 32
+            },
+            "targets": [
+                {
+                    "expr": "rate(bot_execution_duration_seconds_sum[5m]) / rate(bot_execution_duration_seconds_count[5m])",
+                    "refId": "A"
+                }
+            ],
+            "valueName": "current",
+            "format": "s",
+            "thresholds": "5,10"
+        },
+        {
+            "id": 10,
+            "title": "Total Jobs Processed",
+            "type": "singlestat",
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 12,
+                "y": 32
+            },
+            "targets": [
+                {
+                    "expr": "sum(bot_executions_total)",
+                    "refId": "A"
+                }
+            ],
+            "valueName": "current",
+            "format": "short"
+        },
+        {
+            "id": 11,
+            "title": "Active Workers",
+            "type": "singlestat",
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 18,
+                "y": 32
+            },
+            "targets": [
+                {
+                    "expr": "sum(queue_size{state=\"active\"})",
+                    "refId": "A"
+                }
+            ],
+            "valueName": "current",
+            "format": "short"
+        }
+    ]
 }

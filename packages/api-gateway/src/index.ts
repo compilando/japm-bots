@@ -17,7 +17,7 @@ const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
 const redis = new Redis({
     host: REDIS_HOST,
     port: 6379,
-    maxRetriesPerRequest: 3
+    maxRetriesPerRequest: null
 });
 
 // Configurar colas
