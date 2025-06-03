@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import swaggerUi from 'swagger-ui-express';
 import { Worker, Queue } from 'bullmq';
 import Redis from 'ioredis';
 import axios from 'axios';
@@ -9,6 +10,7 @@ import {
     webhookDeliveryCounter,
     webhookDeliveryDuration
 } from '@bot-core/common';
+import { swaggerSpec, swaggerJson } from './swagger';
 
 const app = express();
 const PORT = process.env.WEBHOOK_MANAGER_PORT || 4000;
@@ -31,12 +33,63 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Health check
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     tags: [Health]
+ *     summary: Health check del Webhook Manager
+ *     description: Verifica el estado de salud del servicio y la conectividad con la cola
+ *     responses:
+ *       200:
+ *         description: Servicio saludable
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthResponse'
+ */
 app.get('/health', (req: express.Request, res: express.Response) => {
     res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
         queue: webhookQueue.name
+    });
+});
+
+// Swagger UI y documentación
+app.get('/api-docs/swagger.json', swaggerJson);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: '📤 Bot System Webhook Manager',
+    customfavIcon: '/favicon.ico',
+    swaggerOptions: {
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        filter: true,
+        tryItOutEnabled: true
+    }
+}));
+
+// Ruta raíz con información del servicio
+app.get('/', (req, res) => {
+    res.json({
+        service: '📤 Bot System - Webhook Manager',
+        version: '1.0.0',
+        status: 'operational',
+        endpoints: {
+            documentation: '/api-docs',
+            health: '/health',
+            metrics: '/metrics',
+            stats: '/stats',
+            deliver: '/deliver'
+        },
+        features: [
+            'Webhook delivery with retries',
+            'Exponential backoff',
+            'Queue-based processing',
+            'Delivery tracking'
+        ],
+        timestamp: new Date().toISOString()
     });
 });
 
@@ -53,7 +106,40 @@ app.get('/metrics', async (req: express.Request, res: express.Response) => {
     }
 });
 
-// Endpoint para recibir resultados de bots y encolar webhooks
+/**
+ * @swagger
+ * /deliver:
+ *   post:
+ *     tags: [Webhooks]
+ *     summary: Encolar entrega de webhook
+ *     description: |
+ *       Recibe un resultado de bot y lo encola para entrega vía webhook.
+ *       El sistema manejará automáticamente los reintentos en caso de fallas.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/WebhookDeliveryRequest'
+ *           examples:
+ *             python-result:
+ *               $ref: '#/components/examples/PythonBotResult'
+ *             node-result:
+ *               $ref: '#/components/examples/NodeBotResult'
+ *             java-result:
+ *               $ref: '#/components/examples/JavaBotResult'
+ *     responses:
+ *       200:
+ *         description: Webhook encolado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookDeliveryResponse'
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 app.post('/deliver', async (req, res) => {
     try {
         const { jobId, result, webhookUrl } = req.body;
@@ -111,7 +197,33 @@ app.post('/deliver', async (req, res) => {
     }
 });
 
-// Endpoint para consultar estado de una entrega
+/**
+ * @swagger
+ * /delivery/{deliveryId}:
+ *   get:
+ *     tags: [Deliveries]
+ *     summary: Consultar estado de una entrega
+ *     description: Obtiene información detallada sobre el estado de una entrega de webhook específica
+ *     parameters:
+ *       - in: path
+ *         name: deliveryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID único de la entrega
+ *         example: "67890"
+ *     responses:
+ *       200:
+ *         description: Estado de la entrega obtenido exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DeliveryStatus'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 app.get('/delivery/:deliveryId', async (req, res) => {
     try {
         const { deliveryId } = req.params;
@@ -140,7 +252,25 @@ app.get('/delivery/:deliveryId', async (req, res) => {
     }
 });
 
-// Endpoint para obtener estadísticas de entregas
+/**
+ * @swagger
+ * /stats:
+ *   get:
+ *     tags: [Stats]
+ *     summary: Estadísticas de entregas de webhooks
+ *     description: |
+ *       Obtiene estadísticas en tiempo real de las entregas de webhooks,
+ *       incluyendo entregas pendientes, activas, completadas y fallidas
+ *     responses:
+ *       200:
+ *         description: Estadísticas obtenidas exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/WebhookStats'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 app.get('/stats', async (req, res) => {
     try {
         const [waiting, active, completed, failed] = await Promise.all([

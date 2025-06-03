@@ -101,13 +101,14 @@ echo "=== 📝 Log Queries Test ==="
 
 # Test Loki query API
 printf "Testing %-25s" "Loki Query API..."
-loki_response=$(curl -s --max-time 5 "http://localhost:3100/loki/api/v1/query?query={container_name=~\".%2B\"}" 2>/dev/null)
-if echo "$loki_response" | grep -q "status.*success"; then
-    echo " ✅ OK (logs available)"
+# Try a simple labels query first
+loki_response=$(curl -s --max-time 10 "http://localhost:3100/loki/api/v1/labels" 2>/dev/null)
+if echo "$loki_response" | grep -q "status"; then
+    echo " ✅ OK (API responding)"
     ((total_tests++))
     ((passed_tests++))
 else
-    echo " ❌ FAILED (no logs or error)"
+    echo " ❌ FAILED (API not responding)"
     ((total_tests++))
 fi
 

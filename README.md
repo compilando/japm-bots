@@ -32,11 +32,13 @@ Complete multi-language bot execution system with TypeScript, Redis, BullMQ and 
 - **Complete Monitoring**: Prometheus metrics and Grafana dashboards
 - **High Availability**: Graceful shutdown and failure recovery
 - **Scalability**: Multiple workers and replicas
+- **📚 Interactive API Documentation**: Swagger UI for both API Gateway and Webhook Manager
 
 ## 📦 Services
 
 ### API Gateway (Port 3000)
 - Main endpoint for bot invocation
+- Interactive Swagger documentation
 - Bull Board for queue monitoring
 - Prometheus metrics
 - Rate limiting and security
@@ -95,16 +97,46 @@ cd japm-bots
 - `./scripts/start.sh --clean` - Clean rebuild
 - `./scripts/start.sh --force` - Force clean rebuild  
 - `./scripts/test.sh` - Test all endpoints and functionality
+- `./scripts/test-swagger.sh` - Test Swagger documentation endpoints
 
 ### Main Endpoints
 
 - **API Gateway**: http://localhost:3000
+  - **📚 API Documentation**: http://localhost:3000/api-docs
 - **Bull Board**: http://localhost:3000/admin/queues
 - **Webhook Manager**: http://localhost:4000
+  - **📚 API Documentation**: http://localhost:4000/api-docs
 - **Mock Webhook**: http://localhost:5000
 - **Prometheus**: http://localhost:9090
 - **Grafana**: http://localhost:3001 (admin/admin123)
 - **Loki**: http://localhost:3100
+
+## 📚 Interactive API Documentation
+
+Both services now include comprehensive Swagger documentation:
+
+### 🤖 API Gateway Documentation
+- **URL**: http://localhost:3000/api-docs
+- **Features**:
+  - Interactive bot invocation with examples
+  - Real-time job status monitoring
+  - Queue statistics and health checks
+  - Try-it-out functionality for all endpoints
+
+### 📤 Webhook Manager Documentation  
+- **URL**: http://localhost:4000/api-docs
+- **Features**:
+  - Webhook delivery management
+  - Delivery status tracking
+  - Retry configuration examples
+  - Comprehensive error handling documentation
+
+### 🎯 Key Documentation Features
+- **Interactive Testing**: Use "Try it out" buttons to test APIs directly
+- **Schema Validation**: Real-time request/response validation
+- **Multiple Examples**: Python, Node.js, and Java bot examples
+- **Error Scenarios**: Comprehensive error response documentation
+- **Authentication**: Ready for future auth implementation
 
 ## 📝 Usage Examples
 
@@ -308,6 +340,10 @@ docker-compose up --build
 2. **Insufficient memory**: Reduce worker replicas
 3. **Redis connection issues**: Check Redis health check
 4. **Build failures**: See [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+5. **Loki 503 errors**: 
+   - Wait 30 seconds after startup for full initialization
+   - Run `./scripts/loki-diagnose.sh` for detailed diagnosis
+   - Restart with `docker-compose restart loki promtail`
 
 ### Status Verification
 ```bash
@@ -322,6 +358,9 @@ docker stats
 
 # Test minimal setup
 docker-compose -f docker-compose.simple.yml up
+
+# Loki-specific diagnostics
+./scripts/loki-diagnose.sh
 ```
 
 For detailed troubleshooting, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

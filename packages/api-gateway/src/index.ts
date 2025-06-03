@@ -2,12 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import swaggerUi from 'swagger-ui-express';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { BotTask, getMetrics, botExecutionCounter } from '@bot-core/common';
+import { swaggerSpec, swaggerJson } from './swagger';
 
 const app = express();
 const PORT = process.env.API_GATEWAY_PORT || 3000;
@@ -44,12 +46,26 @@ app.use(express.json({ limit: '10mb' }));
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 100, // máximo 100 requests por ventana
+    max: 1000, // máximo 100 requests por ventana
     message: 'Too many requests from this IP'
 });
 app.use(limiter);
 
-// Health check
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     tags: [Health]
+ *     summary: Health check del API Gateway
+ *     description: Verifica el estado de salud del servicio y la conectividad con las colas
+ *     responses:
+ *       200:
+ *         description: Servicio saludable
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthResponse'
+ */
 app.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
@@ -72,7 +88,68 @@ app.get('/metrics', async (req, res) => {
     }
 });
 
-// Endpoint principal para invocar bots
+/**
+ * @swagger
+ * /invoke:
+ *   post:
+ *     tags: [Bots]
+ *     summary: Invocar un bot
+ *     description: |
+ *       Crea y encola un trabajo para ejecutar un bot específico.
+ *       El resultado se enviará al webhook especificado cuando esté listo.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/BotInvokeRequest'
+ *           examples:
+ *             python-analysis:
+ *               summary: Bot Python para análisis de datos
+ *               value:
+ *                 botType: python
+ *                 payload:
+ *                   task: data_analysis
+ *                   dataset: sales_2024
+ *                   parameters:
+ *                     algorithm: regression
+ *                     features: [price, quantity, date]
+ *                 webhookUrl: https://myapp.com/webhook/python-result
+ *                 priority: 2
+ *             node-api-test:
+ *               summary: Bot Node.js para testing de APIs
+ *               value:
+ *                 botType: node
+ *                 payload:
+ *                   action: api_test
+ *                   endpoints: ["/users", "/products"]
+ *                   timeout: 5000
+ *                 webhookUrl: https://myapp.com/webhook/node-result
+ *                 priority: 3
+ *             java-batch:
+ *               summary: Bot Java para procesamiento batch
+ *               value:
+ *                 botType: java
+ *                 payload:
+ *                   operation: batch_process
+ *                   records: 10000
+ *                   batchSize: 1000
+ *                 webhookUrl: https://myapp.com/webhook/java-result
+ *                 priority: 1
+ *     responses:
+ *       200:
+ *         description: Bot encolado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BotInvokeResponse'
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       429:
+ *         $ref: '#/components/responses/TooManyRequests'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 app.post('/invoke', async (req, res) => {
     try {
         const { botType, payload, webhookUrl, priority = 3 } = req.body;
@@ -141,7 +218,33 @@ app.post('/invoke', async (req, res) => {
     }
 });
 
-// Endpoint para consultar estado de un job
+/**
+ * @swagger
+ * /job/{jobId}:
+ *   get:
+ *     tags: [Jobs]
+ *     summary: Consultar estado de un trabajo
+ *     description: Obtiene información detallada sobre el estado y progreso de un trabajo específico
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID único del trabajo
+ *         example: "12345"
+ *     responses:
+ *       200:
+ *         description: Estado del trabajo obtenido exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/JobStatus'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 app.get('/job/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;
@@ -170,7 +273,25 @@ app.get('/job/:jobId', async (req, res) => {
     }
 });
 
-// Endpoint para obtener estadísticas de las colas
+/**
+ * @swagger
+ * /stats:
+ *   get:
+ *     tags: [Stats]
+ *     summary: Estadísticas de las colas
+ *     description: |
+ *       Obtiene estadísticas en tiempo real de todas las colas del sistema,
+ *       incluyendo trabajos de bots y entregas de webhooks
+ *     responses:
+ *       200:
+ *         description: Estadísticas obtenidas exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/QueueStats'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 app.get('/stats', async (req, res) => {
     try {
         const [waiting, active, completed, failed] = await Promise.all([
@@ -206,6 +327,38 @@ app.get('/stats', async (req, res) => {
         console.error('Error getting queue stats:', error);
         res.status(500).json({ error: 'Error al obtener estadísticas' });
     }
+});
+
+// Swagger UI y documentación
+app.get('/api-docs/swagger.json', swaggerJson);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: '🤖 Bot System API Gateway',
+    customfavIcon: '/favicon.ico',
+    swaggerOptions: {
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        filter: true,
+        tryItOutEnabled: true
+    }
+}));
+
+// Ruta raíz con información del servicio
+app.get('/', (req, res) => {
+    res.json({
+        service: '🤖 Bot System - API Gateway',
+        version: '1.0.0',
+        status: 'operational',
+        endpoints: {
+            documentation: '/api-docs',
+            health: '/health',
+            metrics: '/metrics',
+            stats: '/stats',
+            bullBoard: '/admin/queues'
+        },
+        botTypes: ['python', 'node', 'java'],
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Montar Bull Board
