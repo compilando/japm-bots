@@ -191,6 +191,102 @@ curl http://localhost:5000/stats
 
 ## 📊 Monitoring
 
+### Log Collection with Grafana Alloy
+
+The system utilizes [Grafana Alloy](https://grafana.com/docs/alloy/latest/) for collecting logs from Docker containers and forwarding them to Loki. Alloy replaces any previous log collection mechanisms (such as Promtail).
+
+The Alloy configuration is located in `alloy/config.alloy`. This setup performs the following key functions:
+
+1.  **Container Discovery**: Uses `discovery.docker` to find all running Docker containers.
+2.  **Relabeling Rule Definition**: A `discovery.relabel` component (`common_docker_rules`) defines rules to process Docker meta-labels. These rules are crucial for:
+    *   Extracting the correct service name (`service_name`) from the `com.docker.compose.service` label.
+    *   Extracting and cleaning the container name (`container_name`).
+    *   Dropping unnecessary Docker meta-labels (`__meta_docker_*`).
+3.  **Log Collection and Rule Application**: The `loki.source.docker` component (`service_logs`) scrapes logs from the discovered containers. It applies the rule set defined by `discovery.relabel.common_docker_rules.rules` to the targets, ensuring logs are correctly labeled. It also adds a static `job="docker-service-logs"` label.
+4.  **Forwarding to Loki**: Finally, the `loki.write` component sends the processed and labeled log entries to the Loki instance.
+
+**Alloy Configuration (`alloy/config.alloy`):**
+```alloy
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// 1. Descubre los contenedores Docker
+discovery.docker "all_containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// 2. Define las reglas de reetiquetado
+discovery.relabel "common_docker_rules" {
+  targets = [] // Atributo targets requerido.
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service_name"
+    action        = "replace"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/?(.*)" // Quita la barra inicial si existe
+    target_label  = "container_name"
+    action        = "replace"
+  }
+  rule {
+    action        = "labeldrop"
+    regex         = "__meta_docker_.+"
+  }
+}
+
+// 3. Recolecta logs de los contenedores, aplicando las reglas definidas
+loki.source.docker "service_logs" {
+  targets    = discovery.docker.all_containers.targets
+  host       = "unix:///var/run/docker.sock"
+  forward_to = [loki.write.default.receiver]
+  
+  labels = {
+    "job" = "docker-service-logs", 
+  }
+
+  // Aplica las reglas definidas en discovery.relabel
+  relabel_rules = discovery.relabel.common_docker_rules.rules 
+}
+
+// 4. Envía los logs a Loki
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+  external_labels = {}
+}
+```
+
+**Docker Compose Configuration (`docker-compose.yml` snippet for Alloy):**
+```yaml
+services:
+  # ... other services ...
+
+  alloy:
+    image: grafana/alloy:v1.9.0 # Ensure this version matches your setup
+    container_name: japm-bots-alloy-1
+    restart: unless-stopped
+    volumes:
+      - ./alloy:/etc/alloy # Mounts the Alloy configuration directory
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Docker socket (read-only)
+    ports:
+      - "12345:12345" # Exposes Alloy UI (optional, can be removed for production)
+    command:
+      - "run"
+      - "/etc/alloy/config.alloy"
+    depends_on:
+      loki:
+        condition: service_healthy
+    # labels: # Uncomment to exclude Alloy's own logs if desired
+    #   logging: "false" 
+
+  # ... other services like loki, grafana, etc.
+```
+
 ### Available Metrics
 
 - `bot_executions_total`: Total executions by type and status
