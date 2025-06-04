@@ -31,23 +31,31 @@ export const BotGroupProvider: React.FC<{ children: ReactNode }> = ({ children }
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
-    const { botTypes: availableBotTypes, fetchBotTypes, loading: isLoadingBotTypes } = useBotTypes();
+    const {
+        botTypes: availableBotTypes,
+        fetchBotTypes,
+        loading: isLoadingBotTypes,
+        error: errorBotTypes // Destructurar error de BotTypeContext
+    } = useBotTypes();
 
     const fetchBotGroups = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         try {
+            console.log("[BotGroupContext] Fetching all bot groups...");
             const data = await apiGetAllBotGroups();
             setBotGroups(data);
+            console.log("[BotGroupContext] Bot groups fetched successfully:", data.length);
         } catch (err: unknown) {
-            setError((err as Error).message || 'Failed to fetch bot groups');
-            console.error("Error fetching bot groups:", err);
+            const errorMessage = (err as Error).message || 'Failed to fetch bot groups';
+            setError(errorMessage);
+            console.error("[BotGroupContext] Error fetching bot groups:", errorMessage, err);
         } finally {
             setIsLoading(false);
         }
     }, []);
 
-    const createBotGroup = async (newGroup: BotGroup) => {
+    const createBotGroup = useCallback(async (newGroup: BotGroup) => {
         setIsLoading(true);
         setError(null);
         try {
@@ -55,15 +63,16 @@ export const BotGroupProvider: React.FC<{ children: ReactNode }> = ({ children }
             setBotGroups(prev => [...prev, created]);
             return created;
         } catch (err: unknown) {
-            setError((err as Error).message || 'Failed to create bot group');
-            console.error("Error creating bot group:", err);
+            const errorMessage = (err as Error).message || 'Failed to create bot group';
+            setError(errorMessage);
+            console.error("[BotGroupContext] Error creating bot group:", errorMessage, err);
             return null;
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const updateBotGroup = async (groupId: string, updates: Partial<Omit<BotGroup, 'groupId'>>) => {
+    const updateBotGroup = useCallback(async (groupId: string, updates: Partial<Omit<BotGroup, 'groupId'>>) => {
         setIsLoading(true);
         setError(null);
         try {
@@ -71,50 +80,60 @@ export const BotGroupProvider: React.FC<{ children: ReactNode }> = ({ children }
             setBotGroups(prev => prev.map(group => (group.groupId === groupId ? updated : group)));
             return updated;
         } catch (err: unknown) {
-            setError((err as Error).message || 'Failed to update bot group');
-            console.error(`Error updating bot group ${groupId}:`, err);
+            const errorMessage = (err as Error).message || 'Failed to update bot group';
+            setError(errorMessage);
+            console.error(`[BotGroupContext] Error updating bot group ${groupId}:`, errorMessage, err);
             return null;
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const deleteBotGroup = async (groupId: string) => {
+    const deleteBotGroup = useCallback(async (groupId: string) => {
         setIsLoading(true);
         setError(null);
         try {
             await apiDeleteBotGroup(groupId);
             setBotGroups(prev => prev.filter(group => group.groupId !== groupId));
         } catch (err: unknown) {
-            setError((err as Error).message || 'Failed to delete bot group');
-            console.error(`Error deleting bot group ${groupId}:`, err);
+            const errorMessage = (err as Error).message || 'Failed to delete bot group';
+            setError(errorMessage);
+            console.error(`[BotGroupContext] Error deleting bot group ${groupId}:`, errorMessage, err);
             throw err;
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    const getBotGroupById = async (groupId: string): Promise<BotGroup | null> => {
+    const getBotGroupById = useCallback(async (groupId: string): Promise<BotGroup | null> => {
         setIsLoading(true);
         setError(null);
         try {
             const group = await apiGetBotGroupById(groupId);
             return group;
         } catch (err: unknown) {
-            setError((err as Error).message || `Failed to fetch bot group ${groupId}`);
-            console.error(`Error fetching bot group ${groupId}:`, err);
+            const errorMessage = (err as Error).message || `Failed to fetch bot group ${groupId}`;
+            setError(errorMessage);
+            console.error(`[BotGroupContext] Error fetching bot group ${groupId}:`, errorMessage, err);
             return null;
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        fetchBotGroups();
-        if (availableBotTypes.length === 0 && !isLoadingBotTypes) {
+        console.log("[BotGroupContext] useEffect triggered for bot groups and types.");
+        fetchBotGroups(); // Cargar grupos
+
+        if (availableBotTypes.length === 0 && !isLoadingBotTypes && !errorBotTypes) {
+            console.log("[BotGroupContext] Conditions met: Fetching bot types.");
             fetchBotTypes();
+        } else {
+            if (availableBotTypes.length > 0) console.log("[BotGroupContext] Bot types already available or no need to fetch.");
+            if (isLoadingBotTypes) console.log("[BotGroupContext] Bot types are currently loading.");
+            if (errorBotTypes) console.log("[BotGroupContext] An error occurred previously while fetching bot types. Not refetching automatically.");
         }
-    }, [fetchBotGroups, availableBotTypes.length, isLoadingBotTypes, fetchBotTypes]);
+    }, [fetchBotGroups, fetchBotTypes, availableBotTypes.length, isLoadingBotTypes, errorBotTypes]);
 
     return (
         <BotGroupContext.Provider value={{
