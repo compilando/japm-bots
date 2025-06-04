@@ -14,7 +14,8 @@ interface BotTypeContextType {
     botTypes: BotTypeConfig[];
     loading: boolean;
     error: Error | null;
-    fetchBotTypes: () => Promise<void>;
+    fetchBotTypes: (options?: { force?: boolean }) => Promise<void>;
+    refreshBotTypes: () => Promise<void>;
     fetchBotTypeById: (botTypeId: string) => Promise<BotTypeConfig | null>;
     createBotType: (newBotType: Omit<BotTypeConfig, 'botType'> & { botType: string }) => Promise<void>;
     updateBotType: (botTypeId: string, updatedData: Partial<Omit<BotTypeConfig, 'botType'>>) => Promise<void>;
@@ -27,8 +28,21 @@ export const BotTypeProvider: React.FC<{ children: ReactNode }> = ({ children })
     const [botTypes, setBotTypes] = useState<BotTypeConfig[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<Error | null>(null);
+    const [initialFetchDone, setInitialFetchDone] = useState<boolean>(false);
 
-    const fetchBotTypes = useCallback(async () => {
+    const fetchBotTypes = useCallback(async (options: { force?: boolean } = {}) => {
+        const { force = false } = options;
+
+        if (!force && botTypes.length > 0 && !error) {
+            console.log("[BotTypeContext] fetchBotTypes: Skipping, data exists, no error, not forced.");
+            return;
+        }
+        if (!force && initialFetchDone && loading) {
+            console.log("[BotTypeContext] fetchBotTypes: Skipping, not forced, initial fetch done, already loading.");
+            return;
+        }
+
+        console.log(`[BotTypeContext] fetchBotTypes: Proceeding. Force: ${force}, InitialFetchDone: ${initialFetchDone}, Length: ${botTypes.length}, Error: ${!!error}`);
         setLoading(true);
         setError(null);
         try {
@@ -38,68 +52,65 @@ export const BotTypeProvider: React.FC<{ children: ReactNode }> = ({ children })
             setError(err as Error);
         } finally {
             setLoading(false);
+            setInitialFetchDone(true);
         }
-    }, []);
+    }, [loading, botTypes.length, error, initialFetchDone]);
+
+    useEffect(() => {
+        if (!initialFetchDone) {
+            console.log("[BotTypeContext] useEffect: Initial fetch not done, calling fetchBotTypes.");
+            fetchBotTypes(); // Initial fetch on mount
+        }
+    }, [initialFetchDone, fetchBotTypes]);
+
+    const refreshBotTypes = useCallback(() => {
+        console.log("[BotTypeContext] refreshBotTypes called.");
+        return fetchBotTypes({ force: true });
+    }, [fetchBotTypes]);
 
     const fetchBotTypeById = useCallback(async (botTypeId: string): Promise<BotTypeConfig | null> => {
-        setLoading(true);
-        setError(null);
+        // This is a specific fetch, usually not subject to the general list loading logic.
+        // However, we might want to add similar loading/error states if it becomes complex.
+        // For now, keep it simple.
         try {
             const data = await apiGetBotType(botTypeId);
-            setLoading(false);
             return data;
         } catch (err) {
-            setError(err as Error);
-            setLoading(false);
+            // setError(err as Error); // Decide if this should set the global error
+            console.error(`[BotTypeContext] Error fetching bot type by ID ${botTypeId}:`, err);
             return null;
         }
     }, []);
 
     const createBotType = useCallback(async (newBotType: Omit<BotTypeConfig, 'botType'> & { botType: string }) => {
-        setLoading(true);
-        setError(null);
         try {
             await apiCreateBotType(newBotType);
-            await fetchBotTypes();
+            await refreshBotTypes(); // Refresh list after creation
         } catch (err) {
-            setError(err as Error);
-            throw err;
-        } finally {
-            setLoading(false);
+            setError(err as Error); // Set global error for creation failure
+            throw err; // Re-throw for the form to handle
         }
-    }, [fetchBotTypes]);
+    }, [refreshBotTypes]);
 
     const updateBotType = useCallback(async (botTypeId: string, updatedData: Partial<Omit<BotTypeConfig, 'botType'>>) => {
-        setLoading(true);
-        setError(null);
         try {
             await apiUpdateBotType(botTypeId, updatedData);
-            await fetchBotTypes();
+            await refreshBotTypes(); // Refresh list after update
         } catch (err) {
             setError(err as Error);
             throw err;
-        } finally {
-            setLoading(false);
         }
-    }, [fetchBotTypes]);
+    }, [refreshBotTypes]);
 
     const removeBotType = useCallback(async (botTypeId: string) => {
-        setLoading(true);
-        setError(null);
         try {
             await apiDeleteBotType(botTypeId);
-            await fetchBotTypes();
+            await refreshBotTypes(); // Refresh list after deletion
         } catch (err) {
             setError(err as Error);
             throw err;
-        } finally {
-            setLoading(false);
         }
-    }, [fetchBotTypes]);
-
-    useEffect(() => {
-        fetchBotTypes();
-    }, [fetchBotTypes]);
+    }, [refreshBotTypes]);
 
     return (
         <BotTypeContext.Provider value={{
@@ -107,6 +118,7 @@ export const BotTypeProvider: React.FC<{ children: ReactNode }> = ({ children })
             loading,
             error,
             fetchBotTypes,
+            refreshBotTypes,
             fetchBotTypeById,
             createBotType,
             updateBotType,

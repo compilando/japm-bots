@@ -31,21 +31,17 @@ const Sidebar = () => {
     return (
         <aside className="w-64 min-h-screen p-4 bg-white/5 backdrop-blur-md border-r border-white/10">
             <div className="mb-8 text-center">
-                <Link href="/" legacyBehavior>
-                    <a className="text-2xl font-bold text-white hover:text-slate-200 transition-colors">
-                        BotAdmin
-                    </a>
+                <Link href="/" className="text-2xl font-bold text-white hover:text-slate-200 transition-colors">
+                    BotAdmin
                 </Link>
             </div>
             <nav>
                 <ul>
                     {navItems.map((item) => (
                         <li key={item.label} className="mb-2">
-                            <Link href={item.href} legacyBehavior>
-                                <a className="flex items-center p-2 text-slate-200 hover:bg-white/10 rounded-lg transition-colors">
-                                    {item.icon}
-                                    {item.label}
-                                </a>
+                            <Link href={item.href} className="flex items-center p-2 text-slate-200 hover:bg-white/10 rounded-lg transition-colors">
+                                {item.icon}
+                                {item.label}
                             </Link>
                         </li>
                     ))}
