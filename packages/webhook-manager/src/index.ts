@@ -49,10 +49,17 @@ app.use(express.json({ limit: '10mb' }));
  *               $ref: '#/components/schemas/HealthResponse'
  */
 app.get('/health', (req: express.Request, res: express.Response) => {
+    const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+    console.log(`💚 [WEBHOOK-MANAGER] Health check desde IP: ${clientIp}`);
+
     res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
-        queue: webhookQueue.name
+        queue: webhookQueue.name,
+        maxRetries: MAX_RETRIES,
+        retryDelay: RETRY_DELAY,
+        uptime: process.uptime(),
+        memoryUsage: process.memoryUsage()
     });
 });
 
@@ -141,21 +148,35 @@ app.get('/metrics', async (req: express.Request, res: express.Response) => {
  *         $ref: '#/components/responses/InternalServerError'
  */
 app.post('/deliver', async (req, res) => {
+    const deliveryId = `del_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const startTime = Date.now();
+
     try {
         const { jobId, result, webhookUrl } = req.body;
+        const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+
+        console.log(`📥 [${deliveryId}] Nueva entrega de webhook recibida`);
+        console.log(`🎯 [${deliveryId}] Job ID: ${jobId}, Client IP: ${clientIp}`);
+        console.log(`📊 [${deliveryId}] Bot Type: ${result?.botType || 'unknown'}, Success: ${result?.success}`);
+        console.log(`🌐 [${deliveryId}] Webhook URL: ${webhookUrl}`);
 
         if (!jobId || !result || !webhookUrl) {
+            console.log(`❌ [${deliveryId}] Validación fallida: Faltan campos requeridos (jobId: ${!!jobId}, result: ${!!result}, webhookUrl: ${!!webhookUrl})`);
             return res.status(400).json({
-                error: 'jobId, result y webhookUrl son requeridos'
+                error: 'jobId, result y webhookUrl son requeridos',
+                deliveryId
             });
         }
 
         // Validar URL del webhook
         try {
             new URL(webhookUrl);
+            console.log(`✅ [${deliveryId}] URL del webhook válida`);
         } catch {
+            console.log(`❌ [${deliveryId}] Validación fallida: URL de webhook inválida: ${webhookUrl}`);
             return res.status(400).json({
-                error: 'webhookUrl debe ser una URL válida'
+                error: 'webhookUrl debe ser una URL válida',
+                deliveryId
             });
         }
 
@@ -169,6 +190,9 @@ app.post('/deliver', async (req, res) => {
             createdAt: new Date()
         };
 
+        console.log(`🔄 [${deliveryId}] Encolando entrega de webhook`);
+        console.log(`📝 [${deliveryId}] Payload size: ${JSON.stringify(webhookDelivery).length} bytes`);
+
         // Añadir a la cola con configuración de reintentos
         const job = await webhookQueue.add('webhook-delivery', webhookDelivery, {
             attempts: MAX_RETRIES,
@@ -180,19 +204,30 @@ app.post('/deliver', async (req, res) => {
             removeOnFail: { count: 50 }
         });
 
-        console.log(`📤 Webhook delivery queued for job ${jobId}: ${job.id}`);
+        const processingTime = Date.now() - startTime;
+
+        console.log(`✅ [${deliveryId}] Webhook encolado exitosamente`);
+        console.log(`📋 [${deliveryId}] Delivery Job ID: ${job.id}, Tiempo de procesamiento: ${processingTime}ms`);
+        console.log(`🔄 [${deliveryId}] Max reintentos: ${MAX_RETRIES}, Delay inicial: ${RETRY_DELAY}ms`);
 
         res.json({
             status: 'queued',
             deliveryId: job.id,
             webhookUrl,
-            maxRetries: MAX_RETRIES
+            maxRetries: MAX_RETRIES,
+            processingTimeMs: processingTime,
+            requestId: deliveryId
         });
 
     } catch (error) {
-        console.error('Error queuing webhook delivery:', error);
+        const processingTime = Date.now() - startTime;
+        console.error(`❌ [${deliveryId}] Error encolando entrega de webhook:`, error);
+        console.error(`⏱️ [${deliveryId}] Tiempo antes del error: ${processingTime}ms`);
+
         res.status(500).json({
-            error: 'Error interno del servidor'
+            error: 'Error interno del servidor',
+            deliveryId,
+            processingTimeMs: processingTime
         });
     }
 });
@@ -298,15 +333,23 @@ app.get('/stats', async (req, res) => {
 // Worker para procesar entregas de webhooks
 const webhookWorker = new Worker('webhook-deliveries', async (job) => {
     const startTime = Date.now();
+    const workerId = `wh_${job.id}_${Date.now()}`;
 
     try {
         const { jobId, result, webhookUrl, attempt = 1 } = job.data as WebhookDelivery;
 
-        console.log(`🔔 Delivering webhook for job ${jobId} (attempt ${attempt}/${MAX_RETRIES})`);
-        console.log(`📍 Target URL: ${webhookUrl}`);
+        console.log(`📤 [${workerId}] Iniciando entrega de webhook`);
+        console.log(`🎯 [${workerId}] Job ID: ${jobId}, Intento: ${attempt}/${MAX_RETRIES}`);
+        console.log(`🌐 [${workerId}] URL destino: ${webhookUrl}`);
+        console.log(`📊 [${workerId}] Bot Type: ${result?.botType || 'unknown'}, Success: ${result?.success}`);
+        console.log(`📦 [${workerId}] Payload size: ${JSON.stringify(result).length} bytes`);
 
         // Actualizar progreso
+        console.log(`📊 [${workerId}] Progreso: 25% - Preparando entrega`);
         job.updateProgress(25);
+
+        console.log(`🚀 [${workerId}] Enviando HTTP POST a webhook`);
+        console.log(`⏱️ [${workerId}] Timeout configurado: 30 segundos`);
 
         // Realizar entrega del webhook
         const response = await axios.post(webhookUrl, result, {
@@ -320,6 +363,7 @@ const webhookWorker = new Worker('webhook-deliveries', async (job) => {
             validateStatus: (status) => status >= 200 && status < 300
         });
 
+        console.log(`📊 [${workerId}] Progreso: 75% - Respuesta recibida`);
         job.updateProgress(75);
 
         // Verificar respuesta exitosa
@@ -330,9 +374,11 @@ const webhookWorker = new Worker('webhook-deliveries', async (job) => {
             webhookDeliveryDuration.observe({ status: 'success' }, deliveryTime);
             webhookDeliveryCounter.inc({ status: 'success' });
 
-            console.log(`✅ Webhook delivered successfully for job ${jobId} in ${deliveryTime}s`);
-            console.log(`📊 Response status: ${response.status}`);
+            console.log(`✅ [${workerId}] Webhook entregado exitosamente en ${deliveryTime}s`);
+            console.log(`📊 [${workerId}] Status HTTP: ${response.status}, Content-Type: ${response.headers['content-type']}`);
+            console.log(`📈 [${workerId}] Métricas actualizadas: success++, duration: ${deliveryTime}s`);
 
+            console.log(`📊 [${workerId}] Progreso: 100% - Entrega completada`);
             job.updateProgress(100);
 
             return {
@@ -350,11 +396,15 @@ const webhookWorker = new Worker('webhook-deliveries', async (job) => {
         const deliveryTime = (Date.now() - startTime) / 1000;
         const { jobId, attempt = 1 } = job.data;
 
-        console.error(`❌ Webhook delivery failed for job ${jobId} (attempt ${attempt}):`, error);
+        console.error(`❌ [${workerId}] Entrega de webhook falló después de ${deliveryTime}s`);
+        console.error(`🔍 [${workerId}] Job ID: ${jobId}, Intento: ${attempt}/${MAX_RETRIES}`);
+        console.error(`💥 [${workerId}] Error:`, error);
 
         // Registrar métricas de fallo
         webhookDeliveryCounter.inc({ status: 'failed' });
         webhookDeliveryDuration.observe({ status: 'failed' }, deliveryTime);
+
+        console.log(`📈 [${workerId}] Métricas actualizadas: failed++, duration: ${deliveryTime}s`);
 
         // Determinar si es un error temporal o permanente
         const isTemporaryError = axios.isAxiosError(error) && (
@@ -365,9 +415,20 @@ const webhookWorker = new Worker('webhook-deliveries', async (job) => {
         );
 
         if (isTemporaryError && attempt < MAX_RETRIES) {
-            console.log(`🔄 Temporary error, will retry (${attempt}/${MAX_RETRIES})`);
+            console.log(`🔄 [${workerId}] Error temporal, se reintentará (${attempt}/${MAX_RETRIES})`);
+            console.log(`⏰ [${workerId}] Próximo intento en: ${RETRY_DELAY * Math.pow(2, attempt - 1)}ms`);
         } else {
-            console.log(`💀 Permanent error or max retries reached (${attempt}/${MAX_RETRIES})`);
+            console.log(`💀 [${workerId}] Error permanente o máx. reintentos alcanzados (${attempt}/${MAX_RETRIES})`);
+        }
+
+        // Logging específico por tipo de error
+        if (axios.isAxiosError(error)) {
+            if (error.response) {
+                console.error(`🌐 [${workerId}] HTTP Error: ${error.response.status} ${error.response.statusText}`);
+                console.error(`📦 [${workerId}] Response data:`, JSON.stringify(error.response.data).substring(0, 200));
+            } else if (error.code) {
+                console.error(`🔌 [${workerId}] Network Error: ${error.code} - ${error.message}`);
+            }
         }
 
         throw new Error(
@@ -383,20 +444,26 @@ const webhookWorker = new Worker('webhook-deliveries', async (job) => {
 
 // Monitoreo de eventos del worker
 webhookWorker.on('completed', (job) => {
-    console.log(`✅ Webhook delivery ${job.id} completed successfully`);
+    console.log(`✅ [WEBHOOK-WORKER] Entrega ${job.id} completada exitosamente`);
 });
 
 webhookWorker.on('failed', (job, err) => {
-    console.error(`❌ Webhook delivery ${job?.id} failed:`, err.message);
+    console.error(`❌ [WEBHOOK-WORKER] Entrega ${job?.id} falló:`, err.message);
 });
 
 webhookWorker.on('stalled', (jobId) => {
-    console.warn(`⚠️  Webhook delivery ${jobId} stalled`);
+    console.warn(`⚠️ [WEBHOOK-WORKER] Entrega ${jobId} se atoró (stalled)`);
+});
+
+webhookWorker.on('error', (err) => {
+    console.error(`💥 [WEBHOOK-WORKER] Error en worker:`, err);
 });
 
 webhookWorker.on('progress', (job, progress) => {
-    console.log(`📊 Webhook delivery ${job.id} progress: ${progress}%`);
+    console.log(`📊 [WEBHOOK-WORKER] Entrega ${job.id} progreso: ${progress}%`);
 });
+
+console.log(`🚀 [WEBHOOK-WORKER] Worker iniciado exitosamente con concurrencia: 10`);
 
 // Función para limpiar entregas antiguas
 async function cleanupOldDeliveries() {
@@ -442,23 +509,32 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
 
 // Iniciar servidor
 app.listen(PORT, () => {
-    console.log(`🚀 Webhook Manager running on port ${PORT}`);
-    console.log(`📍 Redis: ${REDIS_HOST}:6379`);
-    console.log(`🔄 Max retries: ${MAX_RETRIES}`);
-    console.log(`⏱️  Retry delay: ${RETRY_DELAY}ms`);
+    console.log(`🚀 Webhook Manager iniciado exitosamente`);
+    console.log(`🌐 Puerto: ${PORT}`);
+    console.log(`🗄️  Redis: ${REDIS_HOST}:6379`);
+    console.log(`🔄 Max reintentos: ${MAX_RETRIES}`);
+    console.log(`⏱️  Delay de reintentos: ${RETRY_DELAY}ms`);
+    console.log(`📚 Swagger: http://localhost:${PORT}/api-docs`);
+    console.log(`💚 Health: http://localhost:${PORT}/health`);
+    console.log(`📋 Stats: http://localhost:${PORT}/stats`);
+    console.log(`📤 Endpoint delivery: http://localhost:${PORT}/deliver`);
+    console.log(`⚡ Webhook Manager listo para procesar entregas`);
 });
 
 // Graceful shutdown
 async function shutdown() {
-    console.log('🛑 Shutting down Webhook Manager...');
+    console.log('🛑 Cerrando Webhook Manager...');
+    console.log('👷 Cerrando worker...');
 
     try {
         await webhookWorker.close();
+        console.log('📊 Cerrando colas...');
         await webhookQueue.close();
+        console.log('🗄️  Cerrando conexión Redis...');
         await redis.quit();
-        console.log('✅ Webhook Manager shutdown completed');
+        console.log('✅ Webhook Manager cerrado correctamente');
     } catch (error) {
-        console.error('❌ Error during shutdown:', error);
+        console.error('❌ Error durante el cierre:', error);
     }
 
     process.exit(0);
@@ -467,8 +543,9 @@ async function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-console.log('🚀 Webhook Manager started successfully');
-console.log('🎯 Ready to process webhook deliveries...');
+console.log('🚀 Webhook Manager iniciado exitosamente');
+console.log(`📍 Redis: ${REDIS_HOST}:6379`);
+console.log(`🎯 Listo para procesar entregas de webhooks...`);
 
 // Ejecutar estadísticas iniciales
 logWebhookStats(); 

@@ -98,6 +98,8 @@ cd japm-bots
 - `./scripts/start.sh --force` - Force clean rebuild  
 - `./scripts/test.sh` - Test all endpoints and functionality
 - `./scripts/test-swagger.sh` - Test Swagger documentation endpoints
+- `./scripts/test-grafana-logs.sh` - Test Grafana logs dashboard functionality
+- `./scripts/check-logs.sh` - Comprehensive logs system diagnosis
 
 ### Main Endpoints
 
@@ -344,6 +346,11 @@ docker-compose up --build
    - Wait 30 seconds after startup for full initialization
    - Run `./scripts/loki-diagnose.sh` for detailed diagnosis
    - Restart with `docker-compose restart loki promtail`
+6. **Grafana no muestra logs**:
+   - Ejecuta `./scripts/test-grafana-logs.sh` para verificar configuración
+   - Verifica que Loki esté enviando logs: `./scripts/check-logs.sh`
+   - URL del dashboard: http://localhost:3001/d/bot-logs/bot-system-logs
+   - Si siguen sin aparecer, espera 1-2 minutos y genera actividad con `./scripts/test.sh`
 
 ### Status Verification
 ```bash

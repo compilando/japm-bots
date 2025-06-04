@@ -1,0 +1,53 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// 1. Descubre los contenedores Docker
+discovery.docker "all_containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// 2. Define las reglas de reetiquetado
+discovery.relabel "common_docker_rules" {
+  // Este componente define reglas para ser usadas por otros.
+  targets = [] // Atributo targets requerido, incluso si solo se exportan reglas.
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service_name"
+    action        = "replace"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/?(.*)"
+    target_label  = "container_name"
+    action        = "replace"
+  }
+  rule {
+    action        = "labeldrop"
+    regex         = "__meta_docker_.+"
+  }
+}
+
+// 3. Recolecta logs de los contenedores, aplicando las reglas definidas
+loki.source.docker "service_logs" {
+  targets    = discovery.docker.all_containers.targets
+  host       = "unix:///var/run/docker.sock"
+  forward_to = [loki.write.default.receiver]
+  
+  labels = {
+    "job" = "docker-service-logs",
+  }
+
+  // Aplica las reglas definidas en discovery.relabel
+  relabel_rules = discovery.relabel.common_docker_rules.rules 
+}
+
+// 4. Envía los logs a Loki
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+  external_labels = {}
+}

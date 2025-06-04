@@ -46,7 +46,7 @@
             },
             "targets": [
                 {
-                    "expr": "{container_name=~\".+\"} |= \"\"",
+                    "expr": "{container_id=~\".+\"} |= \"\"",
                     "refId": "A"
                 }
             ],
@@ -253,7 +253,7 @@
             },
             "targets": [
                 {
-                    "expr": "sum by (service_name) (count_over_time({container_name=~\".+\"} [1m]))",
+                    "expr": "sum by (service_name) (count_over_time({container_id=~\".+\"} [1m]))",
                     "refId": "A"
                 }
             ],

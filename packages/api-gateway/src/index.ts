@@ -67,13 +67,18 @@ app.use(limiter);
  *               $ref: '#/components/schemas/HealthResponse'
  */
 app.get('/health', (req, res) => {
+    const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+    console.log(`💚 Health check desde IP: ${clientIp}`);
+
     res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
         queues: {
             'bot-tasks': botQueue.name,
             'webhook-deliveries': webhookQueue.name
-        }
+        },
+        uptime: process.uptime(),
+        memoryUsage: process.memoryUsage()
     });
 });
 
@@ -151,28 +156,43 @@ app.get('/metrics', async (req, res) => {
  *         $ref: '#/components/responses/InternalServerError'
  */
 app.post('/invoke', async (req, res) => {
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const startTime = Date.now();
+
     try {
         const { botType, payload, webhookUrl, priority = 3 } = req.body;
+        const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+
+        console.log(`🚀 [${requestId}] Nueva invocación de bot recibida`);
+        console.log(`📊 [${requestId}] Bot Type: ${botType}, Priority: ${priority}, Client IP: ${clientIp}`);
+        console.log(`📝 [${requestId}] Payload size: ${JSON.stringify(payload).length} bytes`);
 
         // Validación básica
         if (!['python', 'node', 'java'].includes(botType)) {
+            console.log(`❌ [${requestId}] Validación fallida: Tipo de bot inválido: ${botType}`);
             return res.status(400).json({
-                error: 'Tipo de bot inválido. Debe ser: python, node, o java'
+                error: 'Tipo de bot inválido. Debe ser: python, node, o java',
+                requestId
             });
         }
 
         if (!payload || !webhookUrl) {
+            console.log(`❌ [${requestId}] Validación fallida: Faltan campos requeridos (payload: ${!!payload}, webhookUrl: ${!!webhookUrl})`);
             return res.status(400).json({
-                error: 'payload y webhookUrl son requeridos'
+                error: 'payload y webhookUrl son requeridos',
+                requestId
             });
         }
 
         // Validar URL del webhook
         try {
             new URL(webhookUrl);
+            console.log(`✅ [${requestId}] Webhook URL válida: ${webhookUrl}`);
         } catch {
+            console.log(`❌ [${requestId}] Validación fallida: URL de webhook inválida: ${webhookUrl}`);
             return res.status(400).json({
-                error: 'webhookUrl debe ser una URL válida'
+                error: 'webhookUrl debe ser una URL válida',
+                requestId
             });
         }
 
@@ -186,6 +206,8 @@ app.post('/invoke', async (req, res) => {
             updatedAt: new Date()
         };
 
+        console.log(`🔄 [${requestId}] Encolando tarea de bot en cola 'bot-tasks'`);
+
         // Añadir a la cola de tareas
         const job = await botQueue.add('bot-task', botTask, {
             priority,
@@ -198,21 +220,36 @@ app.post('/invoke', async (req, res) => {
             }
         });
 
+        const processingTime = Date.now() - startTime;
+
+        console.log(`✅ [${requestId}] Tarea encolada exitosamente`);
+        console.log(`📋 [${requestId}] Job ID: ${job.id}, Tiempo de procesamiento: ${processingTime}ms`);
+
         // Incrementar métricas
         botExecutionCounter.inc({ bot_type: botType, status: 'queued' });
+
+        const queuePosition = await botQueue.getWaiting().then(jobs => jobs.length);
+        console.log(`📊 [${requestId}] Posición en cola: ${queuePosition}, Priority: ${priority}`);
 
         res.json({
             status: 'enqueued',
             jobId: job.id,
             botType,
             priority,
-            estimatedPosition: await botQueue.getWaiting().then(jobs => jobs.length)
+            estimatedPosition: queuePosition,
+            requestId,
+            processingTimeMs: processingTime
         });
 
     } catch (error) {
-        console.error('Error processing invoke request:', error);
+        const processingTime = Date.now() - startTime;
+        console.error(`❌ [${requestId}] Error procesando request: ${error}`);
+        console.error(`⏱️ [${requestId}] Tiempo antes del error: ${processingTime}ms`);
+
         res.status(500).json({
             error: 'Error interno del servidor',
+            requestId,
+            processingTimeMs: processingTime,
             details: process.env.NODE_ENV === 'development' ? error : undefined
         });
     }
@@ -246,15 +283,28 @@ app.post('/invoke', async (req, res) => {
  *         $ref: '#/components/responses/InternalServerError'
  */
 app.get('/job/:jobId', async (req, res) => {
+    const startTime = Date.now();
     try {
         const { jobId } = req.params;
+        const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+
+        console.log(`🔍 Consultando estado del job: ${jobId} desde IP: ${clientIp}`);
+
         const job = await botQueue.getJob(jobId);
 
         if (!job) {
-            return res.status(404).json({ error: 'Job no encontrado' });
+            console.log(`❌ Job no encontrado: ${jobId}`);
+            return res.status(404).json({
+                error: 'Job no encontrado',
+                jobId,
+                timestamp: new Date().toISOString()
+            });
         }
 
         const state = await job.getState();
+        const queryTime = Date.now() - startTime;
+
+        console.log(`✅ Estado del job ${jobId}: ${state}, consulta en ${queryTime}ms`);
 
         res.json({
             id: job.id,
@@ -264,12 +314,18 @@ app.get('/job/:jobId', async (req, res) => {
             createdAt: new Date(job.timestamp),
             processedOn: job.processedOn ? new Date(job.processedOn) : null,
             finishedOn: job.finishedOn ? new Date(job.finishedOn) : null,
-            failedReason: job.failedReason
+            failedReason: job.failedReason,
+            queryTimeMs: queryTime
         });
 
     } catch (error) {
-        console.error('Error getting job status:', error);
-        res.status(500).json({ error: 'Error al consultar estado del job' });
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ Error consultando estado del job ${req.params.jobId}:`, error);
+        res.status(500).json({
+            error: 'Error al consultar estado del job',
+            jobId: req.params.jobId,
+            queryTimeMs: queryTime
+        });
     }
 });
 
@@ -293,7 +349,11 @@ app.get('/job/:jobId', async (req, res) => {
  *         $ref: '#/components/responses/InternalServerError'
  */
 app.get('/stats', async (req, res) => {
+    const startTime = Date.now();
     try {
+        const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+        console.log(`📊 Consultando estadísticas desde IP: ${clientIp}`);
+
         const [waiting, active, completed, failed] = await Promise.all([
             botQueue.getWaiting(),
             botQueue.getActive(),
@@ -308,7 +368,8 @@ app.get('/stats', async (req, res) => {
             webhookQueue.getFailed()
         ]);
 
-        res.json({
+        const queryTime = Date.now() - startTime;
+        const stats = {
             botQueue: {
                 waiting: waiting.length,
                 active: active.length,
@@ -320,12 +381,24 @@ app.get('/stats', async (req, res) => {
                 active: webhookActive.length,
                 completed: webhookCompleted.length,
                 failed: webhookFailed.length
-            }
-        });
+            },
+            queryTimeMs: queryTime,
+            timestamp: new Date().toISOString()
+        };
+
+        console.log(`✅ Estadísticas obtenidas en ${queryTime}ms - Bot Queue: ${waiting.length}W/${active.length}A/${completed.length}C/${failed.length}F`);
+        console.log(`📤 Webhook Queue: ${webhookWaiting.length}W/${webhookActive.length}A/${webhookCompleted.length}C/${webhookFailed.length}F`);
+
+        res.json(stats);
 
     } catch (error) {
-        console.error('Error getting queue stats:', error);
-        res.status(500).json({ error: 'Error al obtener estadísticas' });
+        const queryTime = Date.now() - startTime;
+        console.error(`❌ Error obteniendo estadísticas en ${queryTime}ms:`, error);
+        res.status(500).json({
+            error: 'Error al obtener estadísticas',
+            queryTimeMs: queryTime,
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -375,16 +448,34 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
 
 // Iniciar servidor
 app.listen(PORT, () => {
-    console.log(`🚀 API Gateway running on port ${PORT}`);
-    console.log(`📊 Bull Board available at http://localhost:${PORT}/admin/queues`);
-    console.log(`📈 Metrics available at http://localhost:${PORT}/metrics`);
+    console.log(`🚀 API Gateway iniciado exitosamente`);
+    console.log(`🌐 Puerto: ${PORT}`);
+    console.log(`🗄️  Redis: ${REDIS_HOST}:6379`);
+    console.log(`📊 Bull Board: http://localhost:${PORT}/admin/queues`);
+    console.log(`📈 Métricas: http://localhost:${PORT}/metrics`);
+    console.log(`📚 Swagger: http://localhost:${PORT}/api-docs`);
+    console.log(`💚 Health: http://localhost:${PORT}/health`);
+    console.log(`📋 Stats: http://localhost:${PORT}/stats`);
+    console.log(`⚡ API Gateway listo para recibir requests`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-    console.log('Shutting down API Gateway...');
+    console.log('🛑 Cerrando API Gateway...');
+    console.log('📊 Cerrando colas...');
+    await botQueue.close();
+    await webhookQueue.close();
+    console.log('🗄️  Cerrando conexión Redis...');
+    await redis.quit();
+    console.log('✅ API Gateway cerrado correctamente');
+    process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+    console.log('🛑 Cerrando API Gateway (SIGINT)...');
     await botQueue.close();
     await webhookQueue.close();
     await redis.quit();
+    console.log('✅ API Gateway cerrado correctamente');
     process.exit(0);
 }); 

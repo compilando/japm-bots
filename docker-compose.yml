@@ -10,6 +10,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    labels:
+      com.docker.compose.service: "redis"
+      logging: "true"
 
   api-gateway:
     build:
@@ -24,6 +27,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "api-gateway"
+      logging: "true"
 
   orchestrator:
     build:
@@ -39,6 +45,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "orchestrator"
+      logging: "true"
 
   webhook-manager:
     build:
@@ -53,6 +62,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "webhook-manager"
+      logging: "true"
 
   workers-1:
     build:
@@ -69,6 +81,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "workers-1"
+      logging: "true"
 
   workers-2:
     build:
@@ -85,6 +100,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "workers-2"
+      logging: "true"
 
   workers-3:
     build:
@@ -101,6 +119,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "workers-3"
+      logging: "true"
 
   mock-webhook:
     build:
@@ -111,6 +132,9 @@ services:
     environment:
       NODE_ENV: production
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "mock-webhook"
+      logging: "true"
 
   prometheus:
     image: prom/prometheus:latest
@@ -127,6 +151,9 @@ services:
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "prometheus"
+      logging: "true"
 
   loki:
     image: grafana/loki:latest
@@ -148,19 +175,25 @@ services:
       retries: 5
       start_period: 30s
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "loki"
+      logging: "true"
 
-  promtail:
-    image: grafana/promtail:latest
+  alloy:
+    image: grafana/alloy:latest
     volumes:
-      - ./promtail:/etc/promtail
-      - /var/log:/var/log
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: -config.file=/etc/promtail/config.yml
+      - ./alloy:/etc/alloy
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: run /etc/alloy/config.alloy --server.http.listen-addr=0.0.0.0:12345 --storage.path=/tmp/alloy
+    ports:
+      - "12345:12345"
     depends_on:
       loki:
         condition: service_healthy
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "alloy"
+      logging: "false"
 
   grafana:
     image: grafana/grafana:10.4.1
@@ -175,7 +208,7 @@ services:
       GF_USERS_ALLOW_SIGN_UP: false
       GF_INSTALL_PLUGINS: ""
       GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: ""
-      GF_LOG_LEVEL: warn
+      GF_LOG_LEVEL: info
       GF_PLUGINS_ENABLE_ALPHA: false
       GF_FEATURE_TOGGLES_ENABLE: ""
       GF_AUTO_ASSIGN_ORG_ROLE: Viewer
@@ -183,9 +216,12 @@ services:
       loki:
         condition: service_healthy
     restart: unless-stopped
+    labels:
+      com.docker.compose.service: "grafana"
+      logging: "true"
 
 volumes:
   redis-data:
   prometheus-data:
   grafana-data:
-  loki-data: 
+  loki-data:
