@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* :root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+} */
+
+/* 
+  Los estilos del body como el fondo y la fuente 
+  se manejan ahora en app/layout.tsx usando clases de Tailwind 
+  y la configuración de la fuente Inter.
+*/

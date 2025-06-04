@@ -90,7 +90,7 @@ docker compose up --build -d
 
 # Wait for services
 echo "⏳ Waiting for services to initialize..."
-sleep 30
+sleep 10
 
 # Show status
 echo ""
